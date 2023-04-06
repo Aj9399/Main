@@ -1,0 +1,22 @@
+<template>
+   
+        <!-- we want to display image/data but it take some time  to load, you dont want end user to wondering what's up, 
+            for this we use conditional directives within our template  -->
+
+            <div id="waiting" if:false={ready}>Loading....</div>
+
+         <div id="Display" if:true={ready}>
+           <div> Name : {name}</div>
+           <div> Description :{description}</div>
+<!-- here we  are using some Base Lightning web Component , here label is getting value from js what we defined in category ,
+     and on ui it will display the value without any firld name-->
+           <lightning-badge label={category}></lightning-badge>
+           <lightning-badge label={material}></lightning-badge>
+           <div> Price :{price}</div>
+           <div><img src={pictureUrl}/></div>
+
+
+
+    </div>
+    
+</template>
