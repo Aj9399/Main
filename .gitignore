@@ -24,6 +24,11 @@ yarn-error.log*
 # Dependency directories
 node_modules/
 
+# Vite build
+dist
+dist-ssr
+*.local
+
 # Eslint cache
 .eslintcache
 
