@@ -7,6 +7,18 @@ const STORAGE_KEYS = {
   config: 'kma:config',
 };
 
+// Collision-proof unique id. Date.now() alone repeats when many records are
+// created in the same millisecond (e.g. seeding in a loop), which silently
+// aliases records together on lookup. Prefer crypto.randomUUID when available.
+let idCounter = 0;
+function uid(prefix = ''): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return prefix + crypto.randomUUID();
+  }
+  idCounter += 1;
+  return prefix + Date.now().toString(36) + '-' + idCounter.toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
+
 export const storage = {
   // Customers
   getCustomers: (): Customer[] => {
@@ -23,7 +35,7 @@ export const storage = {
     const customers = storage.getCustomers();
     const newCustomer: Customer = {
       ...customer,
-      id: Date.now().toString(),
+      id: uid('c_'),
       createdAt: new Date().toISOString(),
     };
     customers.push(newCustomer);
@@ -60,7 +72,7 @@ export const storage = {
     const dishes = storage.getDishes();
     const newDish: Dish = {
       ...dish,
-      id: Date.now().toString(),
+      id: uid('d_'),
     };
     dishes.push(newDish);
     storage.saveDishes(dishes);
@@ -100,7 +112,7 @@ export const storage = {
     const existing = storage.getAssignments();
     const newAssignments: MealAssignment[] = assignments.map(a => ({
       ...a,
-      id: Math.random().toString(36).slice(2),
+      id: uid('a_'),
       createdAt: new Date().toISOString(),
     }));
     storage.saveAssignments([...existing, ...newAssignments]);
@@ -123,8 +135,38 @@ export const storage = {
     localStorage.setItem(STORAGE_KEYS.config, JSON.stringify(config));
   },
 
+  // Repair data saved by older builds that generated IDs with Date.now(),
+  // which collided when records were created in the same millisecond and
+  // caused every lookup to resolve to the first matching record. If any
+  // duplicate IDs are found, re-assign fresh unique IDs and drop stale
+  // assignments (their references would be ambiguous).
+  migrate: () => {
+    const hasDupes = (arr: { id: string }[]) =>
+      new Set(arr.map(x => x.id)).size !== arr.length;
+
+    const customers = storage.getCustomers();
+    const dishes = storage.getDishes();
+    let repaired = false;
+
+    if (hasDupes(customers)) {
+      storage.saveCustomers(customers.map(c => ({ ...c, id: uid('c_') })));
+      repaired = true;
+    }
+    if (hasDupes(dishes)) {
+      storage.saveDishes(dishes.map(d => ({ ...d, id: uid('d_') })));
+      repaired = true;
+    }
+    if (repaired) {
+      // Old assignments point at the now-changed IDs — clear them so the
+      // user simply regenerates today's assignments cleanly.
+      storage.saveAssignments([]);
+    }
+  },
+
   // Init with sample data
   initSampleData: () => {
+    storage.migrate();
+
     if (storage.getCustomers().length === 0) {
       const sampleCustomers: Omit<Customer, 'id' | 'createdAt'>[] = [
         { name: 'Rajesh Mehta', phone: '98-1234-5678', address: 'Sector 7, Pune', preference: 'nonveg', dietaryNotes: '', status: 'active' },

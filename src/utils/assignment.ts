@@ -43,9 +43,10 @@ export const assignMeals = (
 
   let vegCount = 0, nonvegCount = 0, mixedCount = 0;
 
-  // Calculate target counts for mixed dishes
+  // Target number of mixed dishes for the day. Mixed dishes can contain
+  // non-veg, so they are ONLY handed to customers who eat non-veg (nonveg or
+  // both). Pure-veg customers are never counted toward or served a mixed dish.
   const mixedTarget = Math.ceil((count * mixedRatio) / 100);
-  const regularTarget = count - mixedTarget;
 
   // Prepare dish pools with usage tracking
   const vegPool = shuffle(vegDishes);
@@ -53,6 +54,20 @@ export const assignMeals = (
   const mixedPool = shuffle(mixedDishes);
 
   let vegIdx = 0, nonvegIdx = 0, mixedIdx = 0;
+  let mixedAssigned = 0;
+
+  const takeVeg = (): Dish | null => {
+    if (vegPool.length === 0) return null;
+    const d = vegPool[vegIdx % vegPool.length]; vegIdx++; vegCount++; return d;
+  };
+  const takeNonveg = (): Dish | null => {
+    if (nonvegPool.length === 0) return null;
+    const d = nonvegPool[nonvegIdx % nonvegPool.length]; nonvegIdx++; nonvegCount++; return d;
+  };
+  const takeMixed = (): Dish | null => {
+    if (mixedPool.length === 0) return null;
+    const d = mixedPool[mixedIdx % mixedPool.length]; mixedIdx++; mixedCount++; mixedAssigned++; return d;
+  };
 
   // Assign to customers
   const shuffledCustomers = shuffle(activeCustomers);
@@ -61,48 +76,30 @@ export const assignMeals = (
     const customer = shuffledCustomers[i];
     let assignedDish: Dish | null = null;
 
-    // Decide if this should be a mixed dish
-    const isMixedSlot = i < mixedTarget;
-
-    if (isMixedSlot && mixedPool.length > 0) {
-      assignedDish = mixedPool[mixedIdx % mixedPool.length];
-      mixedIdx++;
-      mixedCount++;
-    } else if (customer.preference === 'veg') {
-      if (vegPool.length > 0) {
-        assignedDish = vegPool[vegIdx % vegPool.length];
-        vegIdx++;
-        vegCount++;
-      } else if (mixedPool.length > 0) {
-        assignedDish = mixedPool[mixedIdx % mixedPool.length];
-        mixedIdx++;
-        mixedCount++;
-      }
+    if (customer.preference === 'veg') {
+      // STRICT RULE: a pure-veg customer only ever receives a veg dish.
+      // Never a mixed dish (may contain non-veg) and never a non-veg dish.
+      assignedDish = takeVeg();
+      // No fallback — leaving unassigned is correct rather than risking non-veg.
     } else if (customer.preference === 'nonveg') {
-      if (nonvegPool.length > 0) {
-        assignedDish = nonvegPool[nonvegIdx % nonvegPool.length];
-        nonvegIdx++;
-        nonvegCount++;
-      } else if (mixedPool.length > 0) {
-        assignedDish = mixedPool[mixedIdx % mixedPool.length];
-        mixedIdx++;
-        mixedCount++;
+      // Non-veg customers absorb the mixed-dish quota first, then non-veg,
+      // then mixed as a fallback if non-veg dishes run out.
+      if (mixedAssigned < mixedTarget) {
+        assignedDish = takeMixed() ?? takeNonveg();
+      } else {
+        assignedDish = takeNonveg() ?? takeMixed();
       }
     } else {
-      // 'both' preference
-      const rand = Math.random();
-      if (rand < 0.4) {
-        assignedDish = vegPool[vegIdx % vegPool.length];
-        vegIdx++;
-        vegCount++;
-      } else if (rand < 0.7) {
-        assignedDish = nonvegPool[nonvegIdx % nonvegPool.length];
-        nonvegIdx++;
-        nonvegCount++;
+      // 'both' — eligible for everything; also helps fill the mixed quota.
+      if (mixedAssigned < mixedTarget && mixedPool.length > 0) {
+        assignedDish = takeMixed();
       } else {
-        assignedDish = mixedPool[mixedIdx % mixedPool.length];
-        mixedIdx++;
-        mixedCount++;
+        const rand = Math.random();
+        if (rand < 0.5) {
+          assignedDish = takeVeg() ?? takeNonveg() ?? takeMixed();
+        } else {
+          assignedDish = takeNonveg() ?? takeVeg() ?? takeMixed();
+        }
       }
     }
 
@@ -116,7 +113,9 @@ export const assignMeals = (
     } else {
       unassigned.push({
         customerId: customer.id,
-        reason: 'No suitable dishes available',
+        reason: customer.preference === 'veg'
+          ? 'No veg dishes available for a veg customer'
+          : 'No suitable dishes available',
       });
     }
   }

@@ -147,7 +147,10 @@ export default function Labels({
               const dish = dishes.find(d => d.id === a.dishId);
               if (!customer || !dish) return null;
 
-              const isVeg = customer.preference === 'veg';
+              // The sticker mark must reflect the FOOD in the box, not the
+              // customer's preference. Mixed dishes may contain non-veg, so
+              // they carry the non-veg mark for safety.
+              const isVegDish = dish.type === 'veg';
 
               return (
                 <div key={a.id} className="label-item">
@@ -155,7 +158,7 @@ export default function Labels({
                     <span style={{ color: 'var(--ink-soft)', fontSize: '9px' }}>
                       {shift} · {formatDate(todayStr)}
                     </span>
-                    <span className={`mark ${isVeg ? 'veg' : 'nonveg'}`}></span>
+                    <span className={`mark ${isVegDish ? 'veg' : 'nonveg'}`}></span>
                   </div>
                   <div>
                     <div className="dish">{dish.name}</div>
