@@ -122,6 +122,13 @@ export const storage = {
     return newAssignments;
   },
   clearAssignments: (date: string) => storage.saveAssignments(storage.getAssignments().filter(a => a.date !== date)),
+  clearShift: (date: string, shift: 'morning' | 'evening') =>
+    storage.saveAssignments(storage.getAssignments().filter(a => !(a.date === date && a.shift === shift))),
+  updateAssignmentDish: (id: string, dishId: string) => {
+    const all = storage.getAssignments();
+    const i = all.findIndex(a => a.id === id);
+    if (i >= 0) { all[i].dishId = dishId; storage.saveAssignments(all); }
+  },
 
   // ---------- Config ----------
   getConfig: (): DailyConfig => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.config) || '{}'); } catch { return {} as DailyConfig; } },
