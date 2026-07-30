@@ -28,21 +28,51 @@ export default function Assignment({ customers, dishes, assignments, todayStr, o
     both: active.filter(c => c.preference === 'both').length,
   };
 
-  // default a dish per category (first available of the allowed type for this shift)
-  const defaultCat = (): CategoryDish => {
+  // Resolve the menu to show: today's saved picks → else carry forward the last
+  // saved menu for this shift → else default to first available dishes. Any pick
+  // that points at a dish no longer offered this shift falls back to a default.
+  const resolveMenu = (): { menu: CategoryDish; carried: boolean } => {
     const first = (types: Array<Dish['type']>) => shiftDishes.find(d => types.includes(d.type))?.id || '';
-    return { veg: first(['veg']), nonveg: first(['nonveg', 'mixed']), both: first(['veg', 'nonveg', 'mixed']) };
+    const def: CategoryDish = { veg: first(['veg']), nonveg: first(['nonveg', 'mixed']), both: first(['veg', 'nonveg', 'mixed']) };
+    const valid = (id: string, types: Array<Dish['type']>) => shiftDishes.some(d => d.id === id && types.includes(d.type));
+    const sanitize = (m: CategoryDish): CategoryDish => ({
+      veg: valid(m.veg, ['veg']) ? m.veg : def.veg,
+      nonveg: valid(m.nonveg, ['nonveg', 'mixed']) ? m.nonveg : def.nonveg,
+      both: valid(m.both, ['veg', 'nonveg', 'mixed']) ? m.both : def.both,
+    });
+    const saved = storage.getMenu(todayStr, shift);
+    if (saved) return { menu: sanitize(saved), carried: false };
+    const latest = storage.getLatestMenu(shift);
+    if (latest) return { menu: sanitize(latest), carried: true };
+    return { menu: def, carried: false };
   };
-  const [catDish, setCatDish] = useState<CategoryDish>(defaultCat);
 
-  // reset category defaults when shift changes
-  React.useEffect(() => { setCatDish(defaultCat()); /* eslint-disable-next-line */ }, [shift]);
+  const [catDish, setCatDish] = useState<CategoryDish>(() => resolveMenu().menu);
+  const [carried, setCarried] = useState(false);
+
+  // Load the right menu whenever the shift changes.
+  React.useEffect(() => {
+    const { menu, carried } = resolveMenu();
+    setCatDish(menu);
+    setCarried(carried);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [shift]);
+
+  // Persist a category pick immediately so today's menu is always saved.
+  const setCategory = (key: keyof CategoryDish, dishId: string) => {
+    const next = { ...catDish, [key]: dishId };
+    setCatDish(next);
+    setCarried(false);
+    storage.saveMenu(todayStr, shift, next);
+  };
 
   const shiftAssignments = assignments.filter(a => a.date === todayStr && a.shift === shift);
   const morningN = assignments.filter(a => a.date === todayStr && a.shift === 'morning').length;
   const eveningN = assignments.filter(a => a.date === todayStr && a.shift === 'evening').length;
 
   const handleGenerate = () => {
+    storage.saveMenu(todayStr, shift, catDish); // lock today's menu
+    setCarried(false);
     const { assignments: rows, skipped } = assignByCategory(customers, catDish, todayStr, shift);
     storage.clearShift(todayStr, shift);
     storage.addAssignments(rows);
@@ -68,7 +98,10 @@ export default function Assignment({ customers, dishes, assignments, todayStr, o
       <div className="panel">
         <div className="panel-head">
           <h3>Fill today's {shift} menu — 3 categories</h3>
-          <div className="hint">Pick one dish per category. Every customer auto-gets their category's dish.</div>
+          <div className="hint">
+            {carried ? '↩ Started from your last saved menu — edit if needed. ' : ''}
+            Picks are saved automatically. Every customer auto-gets their category's dish.
+          </div>
         </div>
         <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
           {CATS.map(cat => {
@@ -82,7 +115,7 @@ export default function Assignment({ customers, dishes, assignments, todayStr, o
                 <select
                   style={{ width: '100%' }}
                   value={catDish[cat.key]}
-                  onChange={e => setCatDish({ ...catDish, [cat.key]: e.target.value })}
+                  onChange={e => setCategory(cat.key, e.target.value)}
                 >
                   <option value="">— No dish (skip) —</option>
                   {opts.map(d => (

@@ -7,7 +7,11 @@ const STORAGE_KEYS = {
   config: 'a2y:config',
   brand: 'a2y:brand',
   seq: 'a2y:seq',
+  menus: 'a2y:menus',
 };
+
+// The 3-category dish picks for a given date + shift.
+export interface DayMenu { veg: string; nonveg: string; both: string }
 
 // Collision-proof unique id (Date.now alone repeats within a millisecond).
 let idCounter = 0;
@@ -128,6 +132,26 @@ export const storage = {
     const all = storage.getAssignments();
     const i = all.findIndex(a => a.id === id);
     if (i >= 0) { all[i].dishId = dishId; storage.saveAssignments(all); }
+  },
+
+  // ---------- Daily menu (the 3-category picks per date+shift) ----------
+  getMenus: (): Record<string, DayMenu> => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.menus) || '{}'); } catch { return {}; }
+  },
+  saveMenu: (date: string, shift: 'morning' | 'evening', menu: DayMenu) => {
+    const all = storage.getMenus();
+    all[`${date}:${shift}`] = menu;
+    localStorage.setItem(STORAGE_KEYS.menus, JSON.stringify(all));
+  },
+  getMenu: (date: string, shift: 'morning' | 'evening'): DayMenu | null => {
+    return storage.getMenus()[`${date}:${shift}`] || null;
+  },
+  // Most recent saved menu for a shift (dates sort chronologically as YYYY-MM-DD),
+  // used to carry forward yesterday's menu when today has none yet.
+  getLatestMenu: (shift: 'morning' | 'evening'): DayMenu | null => {
+    const all = storage.getMenus();
+    const keys = Object.keys(all).filter(k => k.endsWith(':' + shift)).sort();
+    return keys.length ? all[keys[keys.length - 1]] : null;
   },
 
   // ---------- Config ----------
